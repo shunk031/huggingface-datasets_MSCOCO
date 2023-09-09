@@ -909,7 +909,9 @@ class MsCocoDataset(ds.GeneratorBasedBuilder):
                 annotations=_load_captions_data(
                     ann_dicts=ann_json["annotations"],
                 ),
-                **generator_kwargs,
+                image_dir=image_dir,
+                images=images,
+                licenses=licenses,
             )
         elif config.task == "instances":
             assert categories is not None
@@ -920,7 +922,9 @@ class MsCocoDataset(ds.GeneratorBasedBuilder):
                     decode_rle=self.config.decode_rle,  # type: ignore
                 ),
                 categories=categories,
-                **generator_kwargs,
+                image_dir=image_dir,
+                images=images,
+                licenses=licenses,
             )
         elif config.task == "person_keypoints":
             assert categories is not None
@@ -931,7 +935,9 @@ class MsCocoDataset(ds.GeneratorBasedBuilder):
                     decode_rle=self.config.decode_rle,  # type: ignore
                 ),
                 categories=categories,
-                **generator_kwargs,
+                image_dir=image_dir,
+                images=images,
+                licenses=licenses,
             )
         else:
             raise ValueError(f"Invalid task: {config.task}")
