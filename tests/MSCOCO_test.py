@@ -8,25 +8,41 @@ def dataset_path() -> str:
 
 
 @pytest.mark.parametrize(
-    argnames="dataset_year",
+    argnames="decode_rle,",
     argvalues=(
-        2014,
-        # 2017,
+        True,
+        False,
     ),
 )
 @pytest.mark.parametrize(
-    argnames="coco_task",
+    argnames=(
+        "dataset_year",
+        "coco_task",
+        "expected_num_train",
+        "expected_num_validation",
+    ),
     argvalues=(
-        # "captions",
-        "instances",
-        # "person_keypoints",
+        (2014, "captions", 82783, 40504),
+        (2017, "captions", 118287, 5000),
+        (2014, "instances", 82081, 40137),
+        (2017, "instances", 117266, 4952),
+        (2014, "person_keypoints", 45174, 21634),
+        (2017, "person_keypoints", 64115, 2693),
     ),
 )
-def test_load_dataset(dataset_path: str, dataset_year: int, coco_task: str):
-    all_dataset = ds.load_dataset(
-        path=dataset_path, year=dataset_year, coco_task=coco_task
+def test_load_dataset(
+    dataset_path: str,
+    dataset_year: int,
+    coco_task: str,
+    decode_rle: bool,
+    expected_num_train: int,
+    expected_num_validation: int,
+):
+    dataset = ds.load_dataset(
+        path=dataset_path,
+        year=dataset_year,
+        coco_task=coco_task,
+        decode_rle=decode_rle,
     )
-    for split in all_dataset.keys():
-        dataset = all_dataset[split]
-        for _ in dataset:
-            pass
+    assert dataset["train"].num_rows == expected_num_train
+    assert dataset["validation"].num_rows == expected_num_validation

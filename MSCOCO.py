@@ -182,29 +182,56 @@ class CaptionsAnnotationData(AnnotationData):
         )
 
 
+class UncompressedRLE(TypedDict):
+    counts: List[int]
+    size: Tuple[int, int]
+
+
+class CompressedRLE(TypedDict):
+    counts: bytes
+    size: Tuple[int, int]
+
+
 @dataclass
 class InstancesAnnotationData(AnnotationData):
-    segmentation: np.ndarray
+    segmentation: Union[np.ndarray, CompressedRLE]
     area: float
     iscrowd: bool
     bbox: Tuple[float, float, float, float]
     category_id: int
 
     @classmethod
-    def rle_segmentation_to_binary_mask(
-        cls, segmentation, iscrowd: bool, height: int, width: int
-    ) -> np.ndarray:
+    def compress_rle(
+        cls,
+        segmentation: Union[List[List[float]], UncompressedRLE],
+        iscrowd: bool,
+        height: int,
+        width: int,
+    ) -> CompressedRLE:
         if iscrowd:
             rle = cocomask.frPyObjects(segmentation, h=height, w=width)
         else:
             rles = cocomask.frPyObjects(segmentation, h=height, w=width)
             rle = cocomask.merge(rles)
 
+        return rle  # type: ignore
+
+    @classmethod
+    def rle_segmentation_to_binary_mask(
+        cls, segmentation, iscrowd: bool, height: int, width: int
+    ) -> np.ndarray:
+        rle = cls.compress_rle(
+            segmentation=segmentation, iscrowd=iscrowd, height=height, width=width
+        )
         return cocomask.decode(rle)  # type: ignore
 
     @classmethod
     def rle_segmentation_to_mask(
-        cls, segmentation, iscrowd: bool, height: int, width: int
+        cls,
+        segmentation: Union[List[List[float]], UncompressedRLE],
+        iscrowd: bool,
+        height: int,
+        width: int,
     ) -> np.ndarray:
         binary_mask = cls.rle_segmentation_to_binary_mask(
             segmentation=segmentation, iscrowd=iscrowd, height=height, width=width
@@ -213,21 +240,31 @@ class InstancesAnnotationData(AnnotationData):
 
     @classmethod
     def from_dict(
-        cls, json_dict: JsonDict, images: Dict[ImageId, ImageData]
+        cls,
+        json_dict: JsonDict,
+        images: Dict[ImageId, ImageData],
+        decode_rle: bool,
     ) -> "InstancesAnnotationData":
         segmentation = json_dict["segmentation"]
         image_id = json_dict["image_id"]
         image_data = images[image_id]
-
         iscrowd = bool(json_dict["iscrowd"])
-        segmentation_mask = cls.rle_segmentation_to_mask(
-            segmentation=segmentation,
-            iscrowd=iscrowd,
-            height=image_data.height,
-            width=image_data.width,
-        )
-        assert segmentation_mask.shape == image_data.shape
 
+        if decode_rle:
+            segmentation_mask = cls.rle_segmentation_to_mask(
+                segmentation=segmentation,
+                iscrowd=iscrowd,
+                height=image_data.height,
+                width=image_data.width,
+            )
+            assert segmentation_mask.shape == image_data.shape
+        else:
+            segmentation_mask = cls.compress_rle(
+                segmentation=segmentation,
+                iscrowd=iscrowd,
+                height=image_data.height,
+                width=image_data.width,
+            )
         return cls(
             #
             # for AnnotationData
@@ -280,20 +317,31 @@ class PersonKeypointsAnnotationData(InstancesAnnotationData):
 
     @classmethod
     def from_dict(
-        cls, json_dict: JsonDict, images: Dict[ImageId, ImageData]
+        cls,
+        json_dict: JsonDict,
+        images: Dict[ImageId, ImageData],
+        decode_rle: bool,
     ) -> "PersonKeypointsAnnotationData":
         segmentation = json_dict["segmentation"]
         image_id = json_dict["image_id"]
         image_data = images[image_id]
-
         iscrowd = bool(json_dict["iscrowd"])
-        segmentation_mask = cls.rle_segmentation_to_mask(
-            segmentation=segmentation,
-            iscrowd=iscrowd,
-            height=image_data.height,
-            width=image_data.width,
-        )
-        assert segmentation_mask.shape == image_data.shape
+
+        if decode_rle:
+            segmentation_mask = cls.rle_segmentation_to_mask(
+                segmentation=segmentation,
+                iscrowd=iscrowd,
+                height=image_data.height,
+                width=image_data.width,
+            )
+            assert segmentation_mask.shape == image_data.shape
+        else:
+            segmentation_mask = cls.compress_rle(
+                segmentation=segmentation,
+                iscrowd=iscrowd,
+                height=image_data.height,
+                width=image_data.width,
+            )
 
         flatten_keypoints = json_dict["keypoints"]
         num_keypoints = json_dict["num_keypoints"]
@@ -407,10 +455,9 @@ def generate_instances_examples(
         image_data = images[image_id]
         image_anns = annotations[image_id]
 
-        try:
-            assert len(image_anns) > 0
-        except Exception:
-            breakpoint()
+        if len(image_anns) < 1:
+            logger.warning(f"No annotation found for image id: {image_id}.")
+            continue
 
         image = _load_image(
             image_path=os.path.join(image_dir, image_data.file_name),
@@ -494,6 +541,7 @@ class MsCocoConfig(ds.BuilderConfig):
         year: int,
         coco_task: Union[str, Sequence[str]],
         version: Optional[Union[ds.Version, str]],
+        decode_rle: bool = False,
         data_dir: Optional[str] = None,
         data_files: Optional[DataFilesDict] = None,
         description: Optional[str] = None,
@@ -510,6 +558,7 @@ class MsCocoConfig(ds.BuilderConfig):
 
         self._year = year
         self._task = coco_task
+        self.decode_rle = decode_rle
 
     def _check_year(self, year: int) -> None:
         assert year in self.YEARS, year
@@ -602,13 +651,16 @@ def _load_captions_data(
 def _load_instances_data(
     ann_dicts: List[JsonDict],
     images: Dict[ImageId, ImageData],
+    decode_rle: bool,
     tqdm_desc: str = "Load instances data",
 ) -> Dict[ImageId, List[InstancesAnnotationData]]:
     annotations = defaultdict(list)
     ann_dicts = sorted(ann_dicts, key=lambda d: d["image_id"])
 
     for ann_dict in tqdm(ann_dicts, desc=tqdm_desc):
-        ann_data = InstancesAnnotationData.from_dict(ann_dict, images=images)
+        ann_data = InstancesAnnotationData.from_dict(
+            ann_dict, images=images, decode_rle=decode_rle
+        )
         annotations[ann_data.image_id].append(ann_data)
 
     return annotations
@@ -617,18 +669,21 @@ def _load_instances_data(
 def _load_person_keypoints_data(
     ann_dicts: List[JsonDict],
     images: Dict[ImageId, ImageData],
+    decode_rle: bool,
     tqdm_desc: str = "Load person keypoints data",
 ) -> Dict[ImageId, List[PersonKeypointsAnnotationData]]:
     annotations = defaultdict(list)
     ann_dicts = sorted(ann_dicts, key=lambda d: d["image_id"])
 
     for ann_dict in tqdm(ann_dicts, desc=tqdm_desc):
-        ann_data = PersonKeypointsAnnotationData.from_dict(ann_dict, images=images)
+        ann_data = PersonKeypointsAnnotationData.from_dict(
+            ann_dict, images=images, decode_rle=decode_rle
+        )
         annotations[ann_data.image_id].append(ann_data)
     return annotations
 
 
-def features_base_dict():
+def get_features_base_dict():
     return {
         "image_id": ds.Value("int64"),
         "image": ds.Image(),
@@ -647,8 +702,32 @@ def features_base_dict():
     }
 
 
-def features_captions() -> ds.Features:
-    features_dict = features_base_dict()
+def get_features_instance_dict(decode_rle: bool):
+    if decode_rle:
+        segmentation_feature = ds.Image()
+    else:
+        segmentation_feature = {
+            "counts": ds.Sequence(ds.Value("int64")),
+            "size": ds.Sequence(ds.Value("int32")),
+        }
+    return {
+        "annotation_id": ds.Value("int64"),
+        "image_id": ds.Value("int64"),
+        "segmentation": segmentation_feature,
+        "area": ds.Value("float32"),
+        "iscrowd": ds.Value("bool"),
+        "bbox": ds.Sequence(ds.Value("float32"), length=4),
+        "category_id": ds.Value("int32"),
+        "category": {
+            "category_id": ds.Value("int32"),
+            "name": ds.Value("string"),
+            "supercategory": ds.Value("string"),
+        },
+    }
+
+
+def get_features_captions() -> ds.Features:
+    features_dict = get_features_base_dict()
     annotations = ds.Sequence(
         {
             "annotation_id": ds.Value("int64"),
@@ -661,33 +740,32 @@ def features_captions() -> ds.Features:
     return ds.Features(features_dict)
 
 
-def features_instances() -> ds.Features:
-    features_dict = features_base_dict()
-    annotations = ds.Sequence(
-        {
-            "annotation_id": ds.Value("int64"),
-            "image_id": ds.Value("int64"),
-            "segmentation": ds.Image(),
-            "area": ds.Value("float32"),
-            "iscrowd": ds.Value("bool"),
-            "bbox": ds.Sequence(ds.Value("float32"), length=4),
-            "category_id": ds.Value("int32"),
-            "category": {
-                "category_id": ds.Value("int32"),
-                "name": ds.Value("string"),
-                "supercategory": ds.Value("string"),
-            },
-        }
-    )
+def get_features_instances(decode_rle: bool) -> ds.Features:
+    features_dict = get_features_base_dict()
+    annotations = ds.Sequence(get_features_instance_dict(decode_rle=decode_rle))
     features_dict.update({"annotations": annotations})
     return ds.Features(features_dict)
 
 
-def features_person_keypoints() -> ds.Features:
-    features_dict = features_base_dict()
-    annotations = ds.Sequence({})
+def get_features_person_keypoints(decode_rle: bool) -> ds.Features:
+    features_dict = get_features_base_dict()
+    features_instance_dict = get_features_instance_dict(decode_rle=decode_rle)
+    features_instance_dict.update(
+        {
+            "keypoints": ds.Sequence(
+                {
+                    "state": ds.Value("string"),
+                    "x": ds.Value("int32"),
+                    "y": ds.Value("int32"),
+                    "v": ds.Value("int32"),
+                }
+            ),
+            "num_keypoints": ds.Value("int32"),
+        }
+    )
+    annotations = ds.Sequence(features_instance_dict)
     features_dict.update({"annotations": annotations})
-    return ds.Features()
+    return ds.Features(features_dict)
 
 
 def dataset_configs(year: int, version: ds.Version) -> List[MsCocoConfig]:
@@ -745,11 +823,15 @@ class MsCocoDataset(ds.GeneratorBasedBuilder):
 
     def _info(self) -> ds.DatasetInfo:
         if self.task == "captions":
-            features = features_captions()
+            features = get_features_captions()
         elif self.task == "instances":
-            features = features_instances()
+            features = get_features_instances(
+                decode_rle=self.config.decode_rle,  # type: ignore
+            )
         elif self.task == "person_keypoints":
-            features = features_person_keypoints()
+            features = get_features_person_keypoints(
+                decode_rle=self.config.decode_rle,  # type: ignore
+            )
         else:
             raise ValueError(f"Invalid task: {self.task}")
 
@@ -804,7 +886,7 @@ class MsCocoDataset(ds.GeneratorBasedBuilder):
 
         ann_json = _load_annotation_json(ann_file_path=ann_file_path)
 
-        info = AnnotationInfo.from_dict(ann_json["info"])
+        # info = AnnotationInfo.from_dict(ann_json["info"])
         licenses = _load_licenses_data(license_dicts=ann_json["licenses"])
         images = _load_images_data(image_dicts=ann_json["images"])
 
@@ -835,6 +917,7 @@ class MsCocoDataset(ds.GeneratorBasedBuilder):
                 annotations=_load_instances_data(
                     images=images,
                     ann_dicts=ann_json["annotations"],
+                    decode_rle=self.config.decode_rle,  # type: ignore
                 ),
                 categories=categories,
                 **generator_kwargs,
@@ -845,6 +928,7 @@ class MsCocoDataset(ds.GeneratorBasedBuilder):
                 annotations=_load_person_keypoints_data(
                     images=images,
                     ann_dicts=ann_json["annotations"],
+                    decode_rle=self.config.decode_rle,  # type: ignore
                 ),
                 categories=categories,
                 **generator_kwargs,
