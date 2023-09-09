@@ -897,12 +897,6 @@ class MsCocoDataset(ds.GeneratorBasedBuilder):
             else None
         )
 
-        generator_kwargs = {
-            "image_dir": image_dir,
-            "images": images,
-            # "info": info,
-            "licenses": licenses,
-        }
         config: MsCocoConfig = self.config  # type: ignore
         if config.task == "captions":
             yield from generate_captions_examples(
