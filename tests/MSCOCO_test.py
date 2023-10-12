@@ -1,3 +1,5 @@
+from typing import Sequence
+
 import datasets as ds
 import pytest
 
@@ -46,3 +48,34 @@ def test_load_dataset(
     )
     assert dataset["train"].num_rows == expected_num_train
     assert dataset["validation"].num_rows == expected_num_validation
+
+
+@pytest.mark.parametrize(
+    argnames="decode_rle,",
+    argvalues=(
+        True,
+        False,
+    ),
+)
+@pytest.mark.parametrize(
+    argnames=(
+        "dataset_year",
+        "mixed_coco_task",
+    ),
+    argvalues=(
+        (2014, ("captions", "instances")),
+        (2014, ("captions", "person_keypoints")),
+    ),
+)
+def test_load_mixed_dataset(
+    dataset_path: str,
+    dataset_year: int,
+    mixed_coco_task: Sequence[str],
+    decode_rle: bool,
+):
+    dataset = ds.load_dataset(
+        path=dataset_path,
+        year=dataset_year,
+        coco_task=mixed_coco_task,
+        decode_rle=decode_rle,
+    )

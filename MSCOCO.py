@@ -35,6 +35,7 @@ LicenseId = int
 CategoryId = int
 Bbox = Tuple[float, float, float, float]
 
+
 MscocoSplits = Literal["train", "val", "test"]
 
 KEYPOINT_STATE: Final[List[str]] = ["unknown", "invisible", "visible"]
@@ -525,6 +526,49 @@ def generate_person_keypoints_examples(
         yield idx, example  # type: ignore
 
 
+def generate_captions_instances_examples(
+    image_dir: str,
+    images: Dict[ImageId, ImageData],
+    captions_annotations: Dict[ImageId, List[CaptionsAnnotationData]],
+    instances_annotations: Dict[ImageId, List[InstancesAnnotationData]],
+    licenses: Dict[LicenseId, LicenseData],
+    categories: Dict[CategoryId, CategoryData],
+):
+    for idx, image_id in enumerate(images.keys()):
+        image_data = images[image_id]
+        captions_anns = captions_annotations[image_id]
+        instances_anns = instances_annotations[image_id]
+
+        assert len(captions_anns) == len(instances_anns)
+        assert len(captions_anns)
+
+        image = _load_image(image_path=os.path.join(image_dir, image_data.file_name))
+        example = asdict(image_data)
+        example["image"] = image
+        example["license"] = asdict(licenses[image_data.license_id])
+
+        example["annotations"] = []
+        for captions_ann, instances_ann in zip(captions_anns, instances_anns):
+            captions_ann_dict = asdict(captions_ann)
+            instances_ann_dict = asdict(instances_ann)
+            category = categories[instances_ann.category_id]
+            instances_ann_dict["category"] = asdict(category)
+
+            breakpoint()
+            example["annotations"].append()
+
+        yield idx, example
+
+
+def construct_task_name(task: Sequence[str]) -> str:
+    if isinstance(task, str):
+        return task
+    elif isinstance(task, (list, set, tuple)):
+        return "-".join(sorted(task))
+    else:
+        raise ValueError(f"Invalid task: {task}")
+
+
 class MsCocoConfig(ds.BuilderConfig):
     YEARS: Tuple[int, ...] = (
         2014,
@@ -568,7 +612,7 @@ class MsCocoConfig(ds.BuilderConfig):
             assert task in self.TASKS, task
         elif isinstance(task, list) or isinstance(task, tuple):
             for t in task:
-                assert self.TASKS, task
+                assert t in self.TASKS, task
         else:
             raise ValueError(f"Invalid task: {task}")
 
@@ -578,15 +622,24 @@ class MsCocoConfig(ds.BuilderConfig):
 
     @property
     def task(self) -> str:
-        if isinstance(self._task, str):
+        return construct_task_name(self._task)
+
+    @property
+    def tasks(self) -> str:
+        if isinstance(self._task, (list, tuple, set)):
             return self._task
-        elif isinstance(self._task, list) or isinstance(self._task, tuple):
-            return "-".join(sorted(self._task))
         else:
-            raise ValueError(f"Invalid task: {self._task}")
+            raise ValueError(f"Only a single task `{self._task}` was found")
+
+    @property
+    def num_tasks(self) -> int:
+        if isinstance(self._task, str):
+            return 1
+        else:
+            return len(self._task)
 
     @classmethod
-    def config_name(cls, year: int, task: Union[str, Sequence[str]]) -> str:
+    def config_name(cls, year: int, task: Sequence[str]) -> str:
         if isinstance(task, str):
             return f"{year}-{task}"
         elif isinstance(task, list) or isinstance(task, tuple):
@@ -702,6 +755,14 @@ def get_features_base_dict():
     }
 
 
+def get_features_caption_dict():
+    return {
+        "annotation_id": ds.Value("int64"),
+        "image_id": ds.Value("int64"),
+        "caption": ds.Value("string"),
+    }
+
+
 def get_features_instance_dict(decode_rle: bool):
     if decode_rle:
         segmentation_feature = ds.Image()
@@ -726,15 +787,23 @@ def get_features_instance_dict(decode_rle: bool):
     }
 
 
+def get_features_person_keypoints_dict():
+    return {
+        "keypoints": ds.Sequence(
+            {
+                "state": ds.Value("string"),
+                "x": ds.Value("int32"),
+                "y": ds.Value("int32"),
+                "v": ds.Value("int32"),
+            }
+        ),
+        "num_keypoints": ds.Value("int32"),
+    }
+
+
 def get_features_captions() -> ds.Features:
     features_dict = get_features_base_dict()
-    annotations = ds.Sequence(
-        {
-            "annotation_id": ds.Value("int64"),
-            "image_id": ds.Value("int64"),
-            "caption": ds.Value("string"),
-        }
-    )
+    annotations = ds.Sequence(get_features_caption_dict())
     features_dict.update({"annotations": annotations})
 
     return ds.Features(features_dict)
@@ -750,22 +819,19 @@ def get_features_instances(decode_rle: bool) -> ds.Features:
 def get_features_person_keypoints(decode_rle: bool) -> ds.Features:
     features_dict = get_features_base_dict()
     features_instance_dict = get_features_instance_dict(decode_rle=decode_rle)
-    features_instance_dict.update(
-        {
-            "keypoints": ds.Sequence(
-                {
-                    "state": ds.Value("string"),
-                    "x": ds.Value("int32"),
-                    "y": ds.Value("int32"),
-                    "v": ds.Value("int32"),
-                }
-            ),
-            "num_keypoints": ds.Value("int32"),
-        }
-    )
+    features_instance_dict.update(get_features_person_keypoints_dict())
+
     annotations = ds.Sequence(features_instance_dict)
     features_dict.update({"annotations": annotations})
     return ds.Features(features_dict)
+
+
+def get_features_captions_instances(decode_rle: bool) -> ds.Features:
+    return ds.Features({})
+
+
+def get_features_captions_person_keypoints(decode_rle: bool) -> ds.Features:
+    return ds.Features({})
 
 
 def dataset_configs(year: int, version: ds.Version) -> List[MsCocoConfig]:
@@ -808,43 +874,43 @@ def configs_2017(version: ds.Version) -> List[MsCocoConfig]:
 
 class MsCocoDataset(ds.GeneratorBasedBuilder):
     VERSION = ds.Version("1.0.0")
-    BUILDER_CONFIG_CLASS = MsCocoConfig
+    BUILDER_CONFIG_CLASS: MsCocoConfig = MsCocoConfig
     BUILDER_CONFIGS = configs_2014(version=VERSION) + configs_2017(version=VERSION)
 
-    @property
-    def year(self) -> int:
-        config: MsCocoConfig = self.config  # type: ignore
-        return config.year
+    def feature_factory(self, decode_rle: bool) -> ds.Features:
+        config: MsCocoConfig = self.config
 
-    @property
-    def task(self) -> str:
-        config: MsCocoConfig = self.config  # type: ignore
-        return config.task
+        if config.task == "captions":
+            return get_features_captions()
+
+        elif config.task == "instances":
+            return get_features_instances(decode_rle=decode_rle)
+
+        elif config.task == "person_keypoints":
+            return get_features_person_keypoints(decode_rle=decode_rle)
+
+        elif config.task == "captions-instances":
+            return get_features_captions_instances(decode_rle=decode_rle)
+
+        elif config.task == "captions-person_keypoints":
+            return get_features_captions_person_keypoints(decode_rle=decode_rle)
+
+        else:
+            raise ValueError(f"Invalid task: {config.task}")
 
     def _info(self) -> ds.DatasetInfo:
-        if self.task == "captions":
-            features = get_features_captions()
-        elif self.task == "instances":
-            features = get_features_instances(
-                decode_rle=self.config.decode_rle,  # type: ignore
-            )
-        elif self.task == "person_keypoints":
-            features = get_features_person_keypoints(
-                decode_rle=self.config.decode_rle,  # type: ignore
-            )
-        else:
-            raise ValueError(f"Invalid task: {self.task}")
-
         return ds.DatasetInfo(
             description=_DESCRIPTION,
             citation=_CITATION,
             homepage=_HOMEPAGE,
             license=_LICENSE,
-            features=features,
+            features=self.feature_factory(decode_rle=self.config.decode_rle),
         )
 
     def _split_generators(self, dl_manager: ds.DownloadManager):
-        file_paths = dl_manager.download_and_extract(_URLS[f"{self.year}"])
+        config: MsCocoConfig = self.config
+
+        file_paths = dl_manager.download_and_extract(_URLS[f"{config.year}"])
 
         imgs = file_paths["images"]  # type: ignore
         anns = file_paths["annotations"]  # type: ignore
@@ -876,28 +942,26 @@ class MsCocoDataset(ds.GeneratorBasedBuilder):
             # ),
         ]
 
-    def _generate_train_val_examples(
-        self, split: str, base_image_dir: str, base_annotation_dir: str
-    ):
-        image_dir = os.path.join(base_image_dir, f"{split}{self.year}")
+    def _generate_examples_single_task(self, ann_dir: str, split: str, image_dir: str):
+        config: MsCocoConfig = self.config
 
-        ann_dir = os.path.join(base_annotation_dir, "annotations")
-        ann_file_path = os.path.join(ann_dir, f"{self.task}_{split}{self.year}.json")
+        # ann_file_path = os.path.join(
+        #     ann_dir, f"{config.task}_{split}{config.year}.json"
+        # )
 
-        ann_json = _load_annotation_json(ann_file_path=ann_file_path)
+        # ann_json = _load_annotation_json(ann_file_path=ann_file_path)
 
-        # info = AnnotationInfo.from_dict(ann_json["info"])
-        licenses = _load_licenses_data(license_dicts=ann_json["licenses"])
-        images = _load_images_data(image_dicts=ann_json["images"])
+        # # info = AnnotationInfo.from_dict(ann_json["info"])
+        # licenses = _load_licenses_data(license_dicts=ann_json["licenses"])
+        # images = _load_images_data(image_dicts=ann_json["images"])
 
-        category_dicts = ann_json.get("categories")
-        categories = (
-            _load_categories_data(category_dicts=category_dicts)
-            if category_dicts is not None
-            else None
-        )
+        # category_dicts = ann_json.get("categories")
+        # categories = (
+        #     _load_categories_data(category_dicts=category_dicts)
+        #     if category_dicts is not None
+        #     else None
+        # )
 
-        config: MsCocoConfig = self.config  # type: ignore
         if config.task == "captions":
             yield from generate_captions_examples(
                 annotations=_load_captions_data(
@@ -935,6 +999,47 @@ class MsCocoDataset(ds.GeneratorBasedBuilder):
             )
         else:
             raise ValueError(f"Invalid task: {config.task}")
+
+    def _generate_examples_multiple_task(
+        self, ann_dir: str, split: str, image_dir: str
+    ):
+        config: MsCocoConfig = self.config
+
+        annotations_kwargs = {}
+        for task in config.tasks:
+            ann_file_path = os.path.join(ann_dir, f"{task}_{split}{config.year}.json")
+            ann_json = _load_annotation_json(ann_file_path=ann_file_path)
+
+            if task == "captions":
+                anns = _load_captions_data(ann_dicts=ann_json["annotations"])
+            elif task == "instances":
+                anns = -_load_instances_data(ann_dicts=ann_json["annotations"])
+            elif task == "person_keypoints":
+                anns = _load_person_keypoints_data(ann_dicts=ann_json["annotations"])
+
+            else:
+                raise ValueError(f"Invalid task: {task}")
+
+            annotations_kwargs[f"{task}_annotations"] = anns
+
+    def _generate_train_val_examples(
+        self, split: str, base_image_dir: str, base_annotation_dir: str
+    ):
+        config: MsCocoConfig = self.config  # type: ignore
+
+        # path to image directory
+        image_dir = os.path.join(base_image_dir, f"{split}{config.year}")
+        # path to annotatons directory
+        ann_dir = os.path.join(base_annotation_dir, "annotations")
+
+        if config.num_tasks > 1:
+            yield from self._generate_examples_multiple_task(
+                ann_dir=ann_dir, split=split, image_dir=image_dir
+            )
+        else:
+            yield from self._generate_examples_single_task(
+                ann_dir=ann_dir, split=split, image_dir=image_dir
+            )
 
     def _generate_test_examples(self, test_image_info_path: str):
         raise NotImplementedError
