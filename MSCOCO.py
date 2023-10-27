@@ -1,3 +1,4 @@
+import abc
 import json
 import logging
 import os
@@ -88,6 +89,104 @@ _URLS = {
         },
     },
 }
+
+CATEGORIES: Final[List[str]] = [
+    "person",
+    "bicycle",
+    "car",
+    "motorcycle",
+    "airplane",
+    "bus",
+    "train",
+    "truck",
+    "boat",
+    "traffic light",
+    "fire hydrant",
+    "stop sign",
+    "parking meter",
+    "bench",
+    "bird",
+    "cat",
+    "dog",
+    "horse",
+    "sheep",
+    "cow",
+    "elephant",
+    "bear",
+    "zebra",
+    "giraffe",
+    "backpack",
+    "umbrella",
+    "handbag",
+    "tie",
+    "suitcase",
+    "frisbee",
+    "skis",
+    "snowboard",
+    "sports ball",
+    "kite",
+    "baseball bat",
+    "baseball glove",
+    "skateboard",
+    "surfboard",
+    "tennis racket",
+    "bottle",
+    "wine glass",
+    "cup",
+    "fork",
+    "knife",
+    "spoon",
+    "bowl",
+    "banana",
+    "apple",
+    "sandwich",
+    "orange",
+    "broccoli",
+    "carrot",
+    "hot dog",
+    "pizza",
+    "donut",
+    "cake",
+    "chair",
+    "couch",
+    "potted plant",
+    "bed",
+    "dining table",
+    "toilet",
+    "tv",
+    "laptop",
+    "mouse",
+    "remote",
+    "keyboard",
+    "cell phone",
+    "microwave",
+    "oven",
+    "toaster",
+    "sink",
+    "refrigerator",
+    "book",
+    "clock",
+    "vase",
+    "scissors",
+    "teddy bear",
+    "hair drier",
+    "toothbrush",
+]
+
+SUPER_CATEGORIES: Final[List[str]] = [
+    "person",
+    "vehicle",
+    "outdoor",
+    "animal",
+    "accessory",
+    "sports",
+    "kitchen",
+    "food",
+    "furniture",
+    "electronic",
+    "appliance",
+    "indoor",
+]
 
 
 @dataclass
@@ -397,32 +496,6 @@ class CaptionExample(BaseExample):
     annotations: List[CaptionAnnotationDict]
 
 
-def generate_captions_examples(
-    image_dir: str,
-    images: Dict[ImageId, ImageData],
-    annotations: Dict[ImageId, List[CaptionsAnnotationData]],
-    licenses: Dict[LicenseId, LicenseData],
-) -> Iterator[Tuple[int, CaptionExample]]:
-    for idx, image_id in enumerate(images.keys()):
-        image_data = images[image_id]
-        image_anns = annotations[image_id]
-
-        assert len(image_anns) > 0
-
-        image = _load_image(
-            image_path=os.path.join(image_dir, image_data.file_name),
-        )
-        example = asdict(image_data)
-        example["image"] = image
-        example["license"] = asdict(licenses[image_data.license_id])
-
-        example["annotations"] = []
-        for ann in image_anns:
-            example["annotations"].append(asdict(ann))
-
-        yield idx, example  # type: ignore
-
-
 class CategoryDict(TypedDict):
     category_id: CategoryId
     name: str
@@ -444,38 +517,6 @@ class InstanceExample(BaseExample):
     annotations: List[InstanceAnnotationDict]
 
 
-def generate_instances_examples(
-    image_dir: str,
-    images: Dict[ImageId, ImageData],
-    annotations: Dict[ImageId, List[InstancesAnnotationData]],
-    licenses: Dict[LicenseId, LicenseData],
-    categories: Dict[CategoryId, CategoryData],
-) -> Iterator[Tuple[int, InstanceExample]]:
-    for idx, image_id in enumerate(images.keys()):
-        image_data = images[image_id]
-        image_anns = annotations[image_id]
-
-        if len(image_anns) < 1:
-            logger.warning(f"No annotation found for image id: {image_id}.")
-            continue
-
-        image = _load_image(
-            image_path=os.path.join(image_dir, image_data.file_name),
-        )
-        example = asdict(image_data)
-        example["image"] = image
-        example["license"] = asdict(licenses[image_data.license_id])
-
-        example["annotations"] = []
-        for ann in image_anns:
-            ann_dict = asdict(ann)
-            category = categories[ann.category_id]
-            ann_dict["category"] = asdict(category)
-            example["annotations"].append(ann_dict)
-
-        yield idx, example  # type: ignore
-
-
 class KeypointDict(TypedDict):
     x: int
     y: int
@@ -492,37 +533,297 @@ class PersonKeypointExample(BaseExample):
     annotations: List[PersonKeypointAnnotationDict]
 
 
-def generate_person_keypoints_examples(
-    image_dir: str,
-    images: Dict[ImageId, ImageData],
-    annotations: Dict[ImageId, List[PersonKeypointsAnnotationData]],
-    licenses: Dict[LicenseId, LicenseData],
-    categories: Dict[CategoryId, CategoryData],
-) -> Iterator[Tuple[int, PersonKeypointExample]]:
-    for idx, image_id in enumerate(images.keys()):
-        image_data = images[image_id]
-        image_anns = annotations[image_id]
+class MsCocoProcessor(object, metaclass=abc.ABCMeta):
+    def load_image(self, image_path: str) -> PilImage:
+        return Image.open(image_path)
 
-        if len(image_anns) < 1:
-            # If there are no persons in the image,
-            # no keypoint annotations will be assigned.
-            continue
+    def load_annotation_json(self, ann_file_path: str) -> JsonDict:
+        logger.info(f"Load annotation json from {ann_file_path}")
+        with open(ann_file_path, "r") as rf:
+            ann_json = json.load(rf)
+        return ann_json
 
-        image = _load_image(
-            image_path=os.path.join(image_dir, image_data.file_name),
+    def load_licenses_data(
+        self, license_dicts: List[JsonDict]
+    ) -> Dict[LicenseId, LicenseData]:
+        licenses = {}
+        for license_dict in license_dicts:
+            license_data = LicenseData.from_dict(license_dict)
+            licenses[license_data.license_id] = license_data
+        return licenses
+
+    def load_images_data(
+        self,
+        image_dicts: List[JsonDict],
+        tqdm_desc: str = "Load images",
+    ) -> Dict[ImageId, ImageData]:
+        images = {}
+        for image_dict in tqdm(image_dicts, desc=tqdm_desc):
+            image_data = ImageData.from_dict(image_dict)
+            images[image_data.image_id] = image_data
+        return images
+
+    def load_categories_data(
+        self,
+        category_dicts: List[JsonDict],
+        tqdm_desc: str = "Load categories",
+    ) -> Dict[CategoryId, CategoryData]:
+        categories = {}
+        for category_dict in tqdm(category_dicts, desc=tqdm_desc):
+            category_data = CategoryData.from_dict(category_dict)
+            categories[category_data.category_id] = category_data
+        return categories
+
+    def get_features_base_dict(self):
+        return {
+            "image_id": ds.Value("int64"),
+            "image": ds.Image(),
+            "file_name": ds.Value("string"),
+            "coco_url": ds.Value("string"),
+            "height": ds.Value("int32"),
+            "width": ds.Value("int32"),
+            "date_captured": ds.Value("string"),
+            "flickr_url": ds.Value("string"),
+            "license_id": ds.Value("int32"),
+            "license": {
+                "url": ds.Value("string"),
+                "license_id": ds.Value("int8"),
+                "name": ds.Value("string"),
+            },
+        }
+
+    @abc.abstractmethod
+    def get_features(self, *args, **kwargs) -> ds.Features:
+        raise NotImplementedError
+
+    @abc.abstractmethod
+    def load_data(
+        self, ann_dicts: List[JsonDict], tqdm_desc: Optional[str] = None, **kwargs
+    ):
+        raise NotImplementedError
+
+    @abc.abstractmethod
+    def generate_examples(
+        self,
+        image_dir: str,
+        images: Dict[ImageId, ImageData],
+        annotations: Dict[ImageId, List[CaptionsAnnotationData]],
+        licenses: Dict[LicenseId, LicenseData],
+        **kwargs,
+    ):
+        raise NotImplementedError
+
+
+class CaptionsProcessor(MsCocoProcessor):
+    def get_features(self):
+        features_dict = self.get_features_base_dict()
+        annotations = ds.Sequence(
+            {
+                "annotation_id": ds.Value("int64"),
+                "image_id": ds.Value("int64"),
+                "caption": ds.Value("string"),
+            }
         )
-        example = asdict(image_data)
-        example["image"] = image
-        example["license"] = asdict(licenses[image_data.license_id])
+        features_dict.update({"annotations": annotations})
+        return ds.Features(features_dict)
 
-        example["annotations"] = []
-        for ann in image_anns:
-            ann_dict = asdict(ann)
-            category = categories[ann.category_id]
-            ann_dict["category"] = asdict(category)
-            example["annotations"].append(ann_dict)
+    def load_data(
+        self,
+        ann_dicts: List[JsonDict],
+        tqdm_desc: str = "Load captions data",
+    ) -> Dict[ImageId, List[CaptionsAnnotationData]]:
+        annotations = defaultdict(list)
+        for ann_dict in tqdm(ann_dicts, desc=tqdm_desc):
+            ann_data = CaptionsAnnotationData.from_dict(ann_dict)
+            annotations[ann_data.image_id].append(ann_data)
+        return annotations
 
-        yield idx, example  # type: ignore
+    def generate_examples(
+        self,
+        image_dir: str,
+        images: Dict[ImageId, ImageData],
+        annotations: Dict[ImageId, List[CaptionsAnnotationData]],
+        licenses: Dict[LicenseId, LicenseData],
+    ) -> Iterator[Tuple[int, CaptionExample]]:
+        for idx, image_id in enumerate(images.keys()):
+            image_data = images[image_id]
+            image_anns = annotations[image_id]
+
+            assert len(image_anns) > 0
+
+            image = self.load_image(
+                image_path=os.path.join(image_dir, image_data.file_name),
+            )
+            example = asdict(image_data)
+            example["image"] = image
+            example["license"] = asdict(licenses[image_data.license_id])
+
+            example["annotations"] = []
+            for ann in image_anns:
+                example["annotations"].append(asdict(ann))
+
+            yield idx, example  # type: ignore
+
+
+class InstancesProcessor(MsCocoProcessor):
+    def get_features_instance_dict(self, decode_rle: bool):
+        if decode_rle:
+            segmentation_feature = ds.Image()
+        else:
+            segmentation_feature = {
+                "counts": ds.Sequence(ds.Value("int64")),
+                "size": ds.Sequence(ds.Value("int32")),
+            }
+        return {
+            "annotation_id": ds.Value("int64"),
+            "image_id": ds.Value("int64"),
+            "segmentation": segmentation_feature,
+            "area": ds.Value("float32"),
+            "iscrowd": ds.Value("bool"),
+            "bbox": ds.Sequence(ds.Value("float32"), length=4),
+            "category_id": ds.Value("int32"),
+            "category": {
+                "category_id": ds.Value("int32"),
+                "name": ds.ClassLabel(
+                    num_classes=len(CATEGORIES),
+                    names=CATEGORIES,
+                ),
+                "supercategory": ds.ClassLabel(
+                    num_classes=len(SUPER_CATEGORIES),
+                    names=SUPER_CATEGORIES,
+                ),
+            },
+        }
+
+    def get_features(self, decode_rle: bool) -> ds.Features:
+        features_dict = self.get_features_base_dict()
+        annotations = ds.Sequence(
+            self.get_features_instance_dict(decode_rle=decode_rle)
+        )
+        features_dict.update({"annotations": annotations})
+        return ds.Features(features_dict)
+
+    def load_data(
+        self,
+        ann_dicts: List[JsonDict],
+        images: Dict[ImageId, ImageData],
+        decode_rle: bool,
+        tqdm_desc: str = "Load instances data",
+    ) -> Dict[ImageId, List[InstancesAnnotationData]]:
+        annotations = defaultdict(list)
+        ann_dicts = sorted(ann_dicts, key=lambda d: d["image_id"])
+
+        for ann_dict in tqdm(ann_dicts, desc=tqdm_desc):
+            ann_data = InstancesAnnotationData.from_dict(
+                ann_dict, images=images, decode_rle=decode_rle
+            )
+            annotations[ann_data.image_id].append(ann_data)
+
+        return annotations
+
+    def generate_examples(
+        self,
+        image_dir: str,
+        images: Dict[ImageId, ImageData],
+        annotations: Dict[ImageId, List[CaptionsAnnotationData]],
+        licenses: Dict[LicenseId, LicenseData],
+        categories: Dict[CategoryId, CategoryData],
+    ) -> Iterator[Tuple[int, InstanceExample]]:
+        for idx, image_id in enumerate(images.keys()):
+            image_data = images[image_id]
+            image_anns = annotations[image_id]
+
+            if len(image_anns) < 1:
+                logger.warning(f"No annotation found for image id: {image_id}.")
+                continue
+
+            image = self.load_image(
+                image_path=os.path.join(image_dir, image_data.file_name),
+            )
+            example = asdict(image_data)
+            example["image"] = image
+            example["license"] = asdict(licenses[image_data.license_id])
+
+            example["annotations"] = []
+            for ann in image_anns:
+                ann_dict = asdict(ann)
+                category = categories[ann.category_id]
+                ann_dict["category"] = asdict(category)
+                example["annotations"].append(ann_dict)
+
+            yield idx, example  # type: ignore
+
+
+class PersonKeypointsProcessor(InstancesProcessor):
+    def get_features(self, decode_rle: bool) -> ds.Features:
+        features_dict = self.get_features_base_dict()
+        features_instance_dict = self.get_features_instance_dict(decode_rle=decode_rle)
+        features_instance_dict.update(
+            {
+                "keypoints": ds.Sequence(
+                    {
+                        "state": ds.Value("string"),
+                        "x": ds.Value("int32"),
+                        "y": ds.Value("int32"),
+                        "v": ds.Value("int32"),
+                    }
+                ),
+                "num_keypoints": ds.Value("int32"),
+            }
+        )
+        annotations = ds.Sequence(features_instance_dict)
+        features_dict.update({"annotations": annotations})
+        return ds.Features(features_dict)
+
+    def load_data(
+        self,
+        ann_dicts: List[JsonDict],
+        images: Dict[ImageId, ImageData],
+        decode_rle: bool,
+        tqdm_desc: str = "Load person keypoints data",
+    ) -> Dict[ImageId, List[InstancesAnnotationData]]:
+        annotations = defaultdict(list)
+        ann_dicts = sorted(ann_dicts, key=lambda d: d["image_id"])
+
+        for ann_dict in tqdm(ann_dicts, desc=tqdm_desc):
+            ann_data = PersonKeypointsAnnotationData.from_dict(
+                ann_dict, images=images, decode_rle=decode_rle
+            )
+            annotations[ann_data.image_id].append(ann_data)
+        return annotations
+
+    def generate_examples(
+        self,
+        image_dir: str,
+        images: Dict[ImageId, ImageData],
+        annotations: Dict[ImageId, List[CaptionsAnnotationData]],
+        licenses: Dict[LicenseId, LicenseData],
+        categories: Dict[CategoryId, CategoryData],
+    ) -> Iterator[Tuple[int, InstanceExample]]:
+        for idx, image_id in enumerate(images.keys()):
+            image_data = images[image_id]
+            image_anns = annotations[image_id]
+
+            if len(image_anns) < 1:
+                # If there are no persons in the image,
+                # no keypoint annotations will be assigned.
+                continue
+
+            image = self.load_image(
+                image_path=os.path.join(image_dir, image_data.file_name),
+            )
+            example = asdict(image_data)
+            example["image"] = image
+            example["license"] = asdict(licenses[image_data.license_id])
+
+            example["annotations"] = []
+            for ann in image_anns:
+                ann_dict = asdict(ann)
+                category = categories[ann.category_id]
+                ann_dict["category"] = asdict(category)
+                example["annotations"].append(ann_dict)
+
+            yield idx, example  # type: ignore
 
 
 class MsCocoConfig(ds.BuilderConfig):
@@ -558,6 +859,7 @@ class MsCocoConfig(ds.BuilderConfig):
 
         self._year = year
         self._task = coco_task
+        self.processor = self.get_processor()
         self.decode_rle = decode_rle
 
     def _check_year(self, year: int) -> None:
@@ -568,7 +870,7 @@ class MsCocoConfig(ds.BuilderConfig):
             assert task in self.TASKS, task
         elif isinstance(task, list) or isinstance(task, tuple):
             for t in task:
-                assert self.TASKS, task
+                assert t, task
         else:
             raise ValueError(f"Invalid task: {task}")
 
@@ -585,6 +887,16 @@ class MsCocoConfig(ds.BuilderConfig):
         else:
             raise ValueError(f"Invalid task: {self._task}")
 
+    def get_processor(self) -> MsCocoProcessor:
+        if self.task == "captions":
+            return CaptionsProcessor()
+        elif self.task == "instances":
+            return InstancesProcessor()
+        elif self.task == "person_keypoints":
+            return PersonKeypointsProcessor()
+        else:
+            raise ValueError(f"Invalid task: {self.task}")
+
     @classmethod
     def config_name(cls, year: int, task: Union[str, Sequence[str]]) -> str:
         if isinstance(task, str):
@@ -594,178 +906,6 @@ class MsCocoConfig(ds.BuilderConfig):
             return f"{year}-{task}"
         else:
             raise ValueError(f"Invalid task: {task}")
-
-
-def _load_image(image_path: str) -> PilImage:
-    return Image.open(image_path)
-
-
-def _load_annotation_json(ann_file_path: str) -> JsonDict:
-    logger.info(f"Load annotation json from {ann_file_path}")
-    with open(ann_file_path, "r") as rf:
-        ann_json = json.load(rf)
-    return ann_json
-
-
-def _load_licenses_data(license_dicts: List[JsonDict]) -> Dict[LicenseId, LicenseData]:
-    licenses = {}
-    for license_dict in license_dicts:
-        license_data = LicenseData.from_dict(license_dict)
-        licenses[license_data.license_id] = license_data
-    return licenses
-
-
-def _load_images_data(
-    image_dicts: List[JsonDict],
-    tqdm_desc: str = "Load images",
-) -> Dict[ImageId, ImageData]:
-    images = {}
-    for image_dict in tqdm(image_dicts, desc=tqdm_desc):
-        image_data = ImageData.from_dict(image_dict)
-        images[image_data.image_id] = image_data
-    return images
-
-
-def _load_categories_data(
-    category_dicts: List[JsonDict],
-    tqdm_desc: str = "Load categories",
-) -> Dict[CategoryId, CategoryData]:
-    categories = {}
-    for category_dict in tqdm(category_dicts, desc=tqdm_desc):
-        category_data = CategoryData.from_dict(category_dict)
-        categories[category_data.category_id] = category_data
-    return categories
-
-
-def _load_captions_data(
-    ann_dicts: List[JsonDict],
-    tqdm_desc: str = "Load captions data",
-) -> Dict[ImageId, List[CaptionsAnnotationData]]:
-    annotations = defaultdict(list)
-    for ann_dict in tqdm(ann_dicts, desc=tqdm_desc):
-        ann_data = CaptionsAnnotationData.from_dict(ann_dict)
-        annotations[ann_data.image_id].append(ann_data)
-    return annotations
-
-
-def _load_instances_data(
-    ann_dicts: List[JsonDict],
-    images: Dict[ImageId, ImageData],
-    decode_rle: bool,
-    tqdm_desc: str = "Load instances data",
-) -> Dict[ImageId, List[InstancesAnnotationData]]:
-    annotations = defaultdict(list)
-    ann_dicts = sorted(ann_dicts, key=lambda d: d["image_id"])
-
-    for ann_dict in tqdm(ann_dicts, desc=tqdm_desc):
-        ann_data = InstancesAnnotationData.from_dict(
-            ann_dict, images=images, decode_rle=decode_rle
-        )
-        annotations[ann_data.image_id].append(ann_data)
-
-    return annotations
-
-
-def _load_person_keypoints_data(
-    ann_dicts: List[JsonDict],
-    images: Dict[ImageId, ImageData],
-    decode_rle: bool,
-    tqdm_desc: str = "Load person keypoints data",
-) -> Dict[ImageId, List[PersonKeypointsAnnotationData]]:
-    annotations = defaultdict(list)
-    ann_dicts = sorted(ann_dicts, key=lambda d: d["image_id"])
-
-    for ann_dict in tqdm(ann_dicts, desc=tqdm_desc):
-        ann_data = PersonKeypointsAnnotationData.from_dict(
-            ann_dict, images=images, decode_rle=decode_rle
-        )
-        annotations[ann_data.image_id].append(ann_data)
-    return annotations
-
-
-def get_features_base_dict():
-    return {
-        "image_id": ds.Value("int64"),
-        "image": ds.Image(),
-        "file_name": ds.Value("string"),
-        "coco_url": ds.Value("string"),
-        "height": ds.Value("int32"),
-        "width": ds.Value("int32"),
-        "date_captured": ds.Value("string"),
-        "flickr_url": ds.Value("string"),
-        "license_id": ds.Value("int32"),
-        "license": {
-            "url": ds.Value("string"),
-            "license_id": ds.Value("int8"),
-            "name": ds.Value("string"),
-        },
-    }
-
-
-def get_features_instance_dict(decode_rle: bool):
-    if decode_rle:
-        segmentation_feature = ds.Image()
-    else:
-        segmentation_feature = {
-            "counts": ds.Sequence(ds.Value("int64")),
-            "size": ds.Sequence(ds.Value("int32")),
-        }
-    return {
-        "annotation_id": ds.Value("int64"),
-        "image_id": ds.Value("int64"),
-        "segmentation": segmentation_feature,
-        "area": ds.Value("float32"),
-        "iscrowd": ds.Value("bool"),
-        "bbox": ds.Sequence(ds.Value("float32"), length=4),
-        "category_id": ds.Value("int32"),
-        "category": {
-            "category_id": ds.Value("int32"),
-            "name": ds.Value("string"),
-            "supercategory": ds.Value("string"),
-        },
-    }
-
-
-def get_features_captions() -> ds.Features:
-    features_dict = get_features_base_dict()
-    annotations = ds.Sequence(
-        {
-            "annotation_id": ds.Value("int64"),
-            "image_id": ds.Value("int64"),
-            "caption": ds.Value("string"),
-        }
-    )
-    features_dict.update({"annotations": annotations})
-
-    return ds.Features(features_dict)
-
-
-def get_features_instances(decode_rle: bool) -> ds.Features:
-    features_dict = get_features_base_dict()
-    annotations = ds.Sequence(get_features_instance_dict(decode_rle=decode_rle))
-    features_dict.update({"annotations": annotations})
-    return ds.Features(features_dict)
-
-
-def get_features_person_keypoints(decode_rle: bool) -> ds.Features:
-    features_dict = get_features_base_dict()
-    features_instance_dict = get_features_instance_dict(decode_rle=decode_rle)
-    features_instance_dict.update(
-        {
-            "keypoints": ds.Sequence(
-                {
-                    "state": ds.Value("string"),
-                    "x": ds.Value("int32"),
-                    "y": ds.Value("int32"),
-                    "v": ds.Value("int32"),
-                }
-            ),
-            "num_keypoints": ds.Value("int32"),
-        }
-    )
-    annotations = ds.Sequence(features_instance_dict)
-    features_dict.update({"annotations": annotations})
-    return ds.Features(features_dict)
 
 
 def dataset_configs(year: int, version: ds.Version) -> List[MsCocoConfig]:
@@ -780,21 +920,17 @@ def dataset_configs(year: int, version: ds.Version) -> List[MsCocoConfig]:
             coco_task="instances",
             version=version,
         ),
-        MsCocoConfig(
-            year=year,
-            coco_task="person_keypoints",
-            version=version,
-        ),
-        MsCocoConfig(
-            year=year,
-            coco_task=("captions", "instances"),
-            version=version,
-        ),
-        MsCocoConfig(
-            year=year,
-            coco_task=("captions", "person_keypoints"),
-            version=version,
-        ),
+        MsCocoConfig(year=year, coco_task="person_keypoints", version=version),
+        # MsCocoConfig(
+        #     year=year,
+        #     coco_task=("captions", "instances"),
+        #     version=version,
+        # ),
+        # MsCocoConfig(
+        #     year=year,
+        #     coco_task=("captions", "person_keypoints"),
+        #     version=version,
+        # ),
     ]
 
 
@@ -822,19 +958,8 @@ class MsCocoDataset(ds.GeneratorBasedBuilder):
         return config.task
 
     def _info(self) -> ds.DatasetInfo:
-        if self.task == "captions":
-            features = get_features_captions()
-        elif self.task == "instances":
-            features = get_features_instances(
-                decode_rle=self.config.decode_rle,  # type: ignore
-            )
-        elif self.task == "person_keypoints":
-            features = get_features_person_keypoints(
-                decode_rle=self.config.decode_rle,  # type: ignore
-            )
-        else:
-            raise ValueError(f"Invalid task: {self.task}")
-
+        processor: MsCocoProcessor = self.config.processor
+        features = processor.get_features(decode_rle=self.config.decode_rle)
         return ds.DatasetInfo(
             description=_DESCRIPTION,
             citation=_CITATION,
@@ -884,57 +1009,33 @@ class MsCocoDataset(ds.GeneratorBasedBuilder):
         ann_dir = os.path.join(base_annotation_dir, "annotations")
         ann_file_path = os.path.join(ann_dir, f"{self.task}_{split}{self.year}.json")
 
-        ann_json = _load_annotation_json(ann_file_path=ann_file_path)
+        processor: MsCocoProcessor = self.config.processor
+
+        ann_json = processor.load_annotation_json(ann_file_path=ann_file_path)
 
         # info = AnnotationInfo.from_dict(ann_json["info"])
-        licenses = _load_licenses_data(license_dicts=ann_json["licenses"])
-        images = _load_images_data(image_dicts=ann_json["images"])
+        licenses = processor.load_licenses_data(license_dicts=ann_json["licenses"])
+        images = processor.load_images_data(image_dicts=ann_json["images"])
 
         category_dicts = ann_json.get("categories")
         categories = (
-            _load_categories_data(category_dicts=category_dicts)
+            processor.load_categories_data(category_dicts=category_dicts)
             if category_dicts is not None
             else None
         )
 
-        config: MsCocoConfig = self.config  # type: ignore
-        if config.task == "captions":
-            yield from generate_captions_examples(
-                annotations=_load_captions_data(
-                    ann_dicts=ann_json["annotations"],
-                ),
-                image_dir=image_dir,
+        config: MsCocoConfig = self.config
+        yield from processor.generate_examples(
+            annotations=processor.load_data(
+                ann_dicts=ann_json["annotations"],
                 images=images,
-                licenses=licenses,
-            )
-        elif config.task == "instances":
-            assert categories is not None
-            yield from generate_instances_examples(
-                annotations=_load_instances_data(
-                    images=images,
-                    ann_dicts=ann_json["annotations"],
-                    decode_rle=self.config.decode_rle,  # type: ignore
-                ),
-                categories=categories,
-                image_dir=image_dir,
-                images=images,
-                licenses=licenses,
-            )
-        elif config.task == "person_keypoints":
-            assert categories is not None
-            yield from generate_person_keypoints_examples(
-                annotations=_load_person_keypoints_data(
-                    images=images,
-                    ann_dicts=ann_json["annotations"],
-                    decode_rle=self.config.decode_rle,  # type: ignore
-                ),
-                categories=categories,
-                image_dir=image_dir,
-                images=images,
-                licenses=licenses,
-            )
-        else:
-            raise ValueError(f"Invalid task: {config.task}")
+                decode_rle=config.decode_rle,
+            ),
+            categories=categories,
+            image_dir=image_dir,
+            images=images,
+            licenses=licenses,
+        )
 
     def _generate_test_examples(self, test_image_info_path: str):
         raise NotImplementedError
