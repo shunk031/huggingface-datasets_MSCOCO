@@ -1,5 +1,9 @@
+import os
+
 import datasets as ds
 import pytest
+
+from MSCOCO import CATEGORIES, SUPER_CATEGORIES
 
 
 @pytest.fixture
@@ -7,6 +11,13 @@ def dataset_path() -> str:
     return "MSCOCO.py"
 
 
+@pytest.mark.skipif(
+    condition=bool(os.environ.get("CI", False)),
+    reason=(
+        "Because this loading script downloads a large dataset, "
+        "we will skip running it on CI."
+    ),
+)
 @pytest.mark.parametrize(
     argnames="decode_rle,",
     argvalues=(
@@ -46,3 +57,8 @@ def test_load_dataset(
     )
     assert dataset["train"].num_rows == expected_num_train
     assert dataset["validation"].num_rows == expected_num_validation
+
+
+def test_consts():
+    assert len(CATEGORIES) == 80
+    assert len(SUPER_CATEGORIES) == 12
