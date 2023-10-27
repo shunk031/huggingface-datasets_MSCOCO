@@ -44,6 +44,6 @@ jobs:
             --no-site-packages \
             --cache-dir=/dev/null
             
-      # - name: Run tests
-      #   run: |
-      #     poetry run pytest --color=yes -rf
+      - name: Run tests
+        run: |
+          poetry run pytest --color=yes -rf
