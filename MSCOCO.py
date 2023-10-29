@@ -920,7 +920,11 @@ def dataset_configs(year: int, version: ds.Version) -> List[MsCocoConfig]:
             coco_task="instances",
             version=version,
         ),
-        MsCocoConfig(year=year, coco_task="person_keypoints", version=version),
+        MsCocoConfig(
+            year=year,
+            coco_task="person_keypoints",
+            version=version,
+        ),
         # MsCocoConfig(
         #     year=year,
         #     coco_task=("captions", "instances"),
