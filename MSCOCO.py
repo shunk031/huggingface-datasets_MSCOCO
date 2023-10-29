@@ -426,22 +426,21 @@ class PersonKeypointsAnnotationData(InstancesAnnotationData):
         image_data = images[image_id]
         iscrowd = bool(json_dict["iscrowd"])
 
-        if decode_rle:
-            segmentation_mask = cls.rle_segmentation_to_mask(
+        segmentation_mask = (
+            cls.rle_segmentation_to_mask(
                 segmentation=segmentation,
                 iscrowd=iscrowd,
                 height=image_data.height,
                 width=image_data.width,
             )
-            assert segmentation_mask.shape == image_data.shape
-        else:
-            segmentation_mask = cls.compress_rle(
+            if decode_rle
+            else cls.compress_rle(
                 segmentation=segmentation,
                 iscrowd=iscrowd,
                 height=image_data.height,
                 width=image_data.width,
             )
-
+        )
         flatten_keypoints = json_dict["keypoints"]
         num_keypoints = json_dict["num_keypoints"]
         keypoints = cls.get_person_keypoints(flatten_keypoints, num_keypoints)
@@ -667,13 +666,14 @@ class CaptionsProcessor(MsCocoProcessor):
 
 class InstancesProcessor(MsCocoProcessor):
     def get_features_instance_dict(self, decode_rle: bool):
-        if decode_rle:
-            segmentation_feature = ds.Image()
-        else:
-            segmentation_feature = {
+        segmentation_feature = (
+            ds.Image()
+            if decode_rle
+            else {
                 "counts": ds.Sequence(ds.Value("int64")),
                 "size": ds.Sequence(ds.Value("int32")),
             }
+        )
         return {
             "annotation_id": ds.Value("int64"),
             "image_id": ds.Value("int64"),
