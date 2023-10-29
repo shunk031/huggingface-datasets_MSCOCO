@@ -349,21 +349,21 @@ class InstancesAnnotationData(AnnotationData):
         image_data = images[image_id]
         iscrowd = bool(json_dict["iscrowd"])
 
-        if decode_rle:
-            segmentation_mask = cls.rle_segmentation_to_mask(
+        segmentation_mask = (
+            cls.rle_segmentation_to_mask(
                 segmentation=segmentation,
                 iscrowd=iscrowd,
                 height=image_data.height,
                 width=image_data.width,
             )
-            assert segmentation_mask.shape == image_data.shape
-        else:
-            segmentation_mask = cls.compress_rle(
+            if decode_rle
+            else cls.compress_rle(
                 segmentation=segmentation,
                 iscrowd=iscrowd,
                 height=image_data.height,
                 width=image_data.width,
             )
+        )
         return cls(
             #
             # for AnnotationData
