@@ -705,7 +705,7 @@ class InstancesProcessor(MsCocoProcessor):
         features_dict.update({"annotations": annotations})
         return ds.Features(features_dict)
 
-    def load_data(
+    def load_data(  # type: ignore[override]
         self,
         ann_dicts: List[JsonDict],
         images: Dict[ImageId, ImageData],
@@ -723,11 +723,11 @@ class InstancesProcessor(MsCocoProcessor):
 
         return annotations
 
-    def generate_examples(
+    def generate_examples(  # type: ignore[override]
         self,
         image_dir: str,
         images: Dict[ImageId, ImageData],
-        annotations: Dict[ImageId, List[CaptionsAnnotationData]],
+        annotations: Dict[ImageId, List[InstancesAnnotationData]],
         licenses: Dict[LicenseId, LicenseData],
         categories: Dict[CategoryId, CategoryData],
     ) -> Iterator[Tuple[int, InstanceExample]]:
@@ -777,13 +777,13 @@ class PersonKeypointsProcessor(InstancesProcessor):
         features_dict.update({"annotations": annotations})
         return ds.Features(features_dict)
 
-    def load_data(
+    def load_data(  # type: ignore[override]
         self,
         ann_dicts: List[JsonDict],
         images: Dict[ImageId, ImageData],
         decode_rle: bool,
         tqdm_desc: str = "Load person keypoints data",
-    ) -> Dict[ImageId, List[InstancesAnnotationData]]:
+    ) -> Dict[ImageId, List[PersonKeypointsAnnotationData]]:
         annotations = defaultdict(list)
         ann_dicts = sorted(ann_dicts, key=lambda d: d["image_id"])
 
@@ -794,14 +794,14 @@ class PersonKeypointsProcessor(InstancesProcessor):
             annotations[ann_data.image_id].append(ann_data)
         return annotations
 
-    def generate_examples(
+    def generate_examples(  # type: ignore[override]
         self,
         image_dir: str,
         images: Dict[ImageId, ImageData],
-        annotations: Dict[ImageId, List[CaptionsAnnotationData]],
+        annotations: Dict[ImageId, List[PersonKeypointsAnnotationData]],
         licenses: Dict[LicenseId, LicenseData],
         categories: Dict[CategoryId, CategoryData],
-    ) -> Iterator[Tuple[int, InstanceExample]]:
+    ) -> Iterator[Tuple[int, PersonKeypointExample]]:
         for idx, image_id in enumerate(images.keys()):
             image_data = images[image_id]
             image_anns = annotations[image_id]
