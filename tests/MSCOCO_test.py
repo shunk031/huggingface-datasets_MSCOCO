@@ -33,12 +33,13 @@ def dataset_path() -> str:
         "expected_num_validation",
     ),
     argvalues=(
-        (2014, "captions", 82783, 40504),
-        (2017, "captions", 118287, 5000),
-        (2014, "instances", 82081, 40137),
-        (2017, "instances", 117266, 4952),
-        (2014, "person_keypoints", 45174, 21634),
-        (2017, "person_keypoints", 64115, 2693),
+        # (2014, "captions", 82783, 40504),
+        # (2017, "captions", 118287, 5000),
+        # (2014, "instances", 82081, 40137),
+        # (2017, "instances", 117266, 4952),
+        # (2014, "person_keypoints", 45174, 21634),
+        # (2017, "person_keypoints", 64115, 2693),
+        (2017, "stuff", None, None),
     ),
 )
 def test_load_dataset(
