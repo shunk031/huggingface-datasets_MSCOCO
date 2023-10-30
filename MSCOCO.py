@@ -614,7 +614,7 @@ class MsCocoProcessor(object, metaclass=abc.ABCMeta):
 
 
 class CaptionsProcessor(MsCocoProcessor):
-    def get_features(self):
+    def get_features(self, *args, **kwargs) -> ds.Features:
         features_dict = self.get_features_base_dict()
         annotations = ds.Sequence(
             {
@@ -630,6 +630,7 @@ class CaptionsProcessor(MsCocoProcessor):
         self,
         ann_dicts: List[JsonDict],
         tqdm_desc: str = "Load captions data",
+        **kwargs,
     ) -> Dict[ImageId, List[CaptionsAnnotationData]]:
         annotations = defaultdict(list)
         for ann_dict in tqdm(ann_dicts, desc=tqdm_desc):
@@ -643,6 +644,7 @@ class CaptionsProcessor(MsCocoProcessor):
         images: Dict[ImageId, ImageData],
         annotations: Dict[ImageId, List[CaptionsAnnotationData]],
         licenses: Dict[LicenseId, LicenseData],
+        **kwargs,
     ) -> Iterator[Tuple[int, CaptionExample]]:
         for idx, image_id in enumerate(images.keys()):
             image_data = images[image_id]
