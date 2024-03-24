@@ -7,8 +7,23 @@ from MSCOCO import CATEGORIES, SUPER_CATEGORIES
 
 
 @pytest.fixture
-def dataset_path() -> str:
-    return "MSCOCO.py"
+def dataset_name() -> str:
+    return "MSCOCO"
+
+
+@pytest.fixture
+def dataset_path(dataset_name: str) -> str:
+    return f"{dataset_name}.py"
+
+
+@pytest.fixture
+def user_name() -> str:
+    return "shunk031"
+
+
+@pytest.fixture
+def repo_id(dataset_name: str, user_name: str) -> str:
+    return f"{user_name}/{dataset_name}"
 
 
 @pytest.mark.skipif(
@@ -48,6 +63,7 @@ def test_load_dataset(
     decode_rle: bool,
     expected_num_train: int,
     expected_num_validation: int,
+    repo_id: str,
 ):
     dataset = ds.load_dataset(
         path=dataset_path,
@@ -57,6 +73,8 @@ def test_load_dataset(
     )
     assert dataset["train"].num_rows == expected_num_train
     assert dataset["validation"].num_rows == expected_num_validation
+
+    dataset.push_to_hub(repo_id=repo_id, config_name=f"{dataset_year}-{coco_task}")
 
 
 def test_consts():
