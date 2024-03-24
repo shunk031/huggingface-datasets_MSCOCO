@@ -6,9 +6,10 @@ authors = ["Shunsuke KITADA <shunsuke.kitada.0831@gmail.com>"]
 readme = "README.md"
 
 [tool.poetry.dependencies]
-python = "^3.9"
-datasets = {extras = ["vision"], version = "^2.14.4"}
+python = ">=3.9,<3.13"
+datasets = { extras = ["vision"], version = "^2.14.4" }
 pycocotools = "^2.0.7"
+numpy = "^1.26.1"
 
 [tool.poetry.group.dev.dependencies]
 ruff = "^0.0.286"
@@ -16,7 +17,8 @@ black = "^23.7.0"
 mypy = "^1.5.1"
 pytest = "^7.4.0"
 pytest-xdist = "^3.3.1"
+numpy = "^1.26.1"
 
 [build-system]
-requires = ["poetry-core"]
+requires = ["poetry-core", "numpy"]
 build-backend = "poetry.core.masonry.api"
