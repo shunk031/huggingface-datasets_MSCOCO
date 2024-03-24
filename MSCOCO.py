@@ -41,16 +41,40 @@ MscocoSplits = Literal["train", "val", "test"]
 KEYPOINT_STATE: Final[List[str]] = ["unknown", "invisible", "visible"]
 
 
-_CITATION = """
+_CITATION = """\
+@inproceedings{lin2014microsoft,
+  title={Microsoft coco: Common objects in context},
+  author={Lin, Tsung-Yi and Maire, Michael and Belongie, Serge and Hays, James and Perona, Pietro and Ramanan, Deva and Doll{\'a}r, Piotr and Zitnick, C Lawrence},
+  booktitle={European Conference on Computer Vision},
+  pages={740--755},
+  year={2014},
+  organization={Springer}
+}
 """
 
-_DESCRIPTION = """
+_DESCRIPTION = """\
+MSCOCO is a large-scale object detection, segmentation, and captioning dataset. COCO has several features:
+- Object segmentation
+- Recognition in context
+- Superpixel stuff segmentation
+- 330K images (>200K labeled)
+- 1.5 million object instances
+- 80 object categories
+- 91 stuff categories
+- 5 captions per image
+- 250,000 people with keypoints
 """
 
-_HOMEPAGE = """
+_HOMEPAGE = """\
+https://cocodataset.org/#home
 """
 
-_LICENSE = """
+_LICENSE = """\
+# Annotations & Website
+The annotations in this dataset along with this website belong to the COCO Consortium and are licensed under a Creative Commons Attribution 4.0 License.
+
+# Images
+The COCO Consortium does not own the copyright of the images. Use of the images must abide by the Flickr Terms of Use. The users of the images accept full responsibility for the use of the dataset, including but not limited to the use of any copies of copyrighted images that they may create from the dataset.
 """
 
 _URLS = {
