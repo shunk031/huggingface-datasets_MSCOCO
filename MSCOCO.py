@@ -835,7 +835,7 @@ class MsCocoConfig(ds.BuilderConfig):
     TASKS: Tuple[str, ...] = (
         "captions",
         "instances",
-        "person_keypoints",
+        "person-keypoints",
     )
 
     def __init__(
@@ -893,7 +893,7 @@ class MsCocoConfig(ds.BuilderConfig):
             return CaptionsProcessor()
         elif self.task == "instances":
             return InstancesProcessor()
-        elif self.task == "person_keypoints":
+        elif self.task == "person-keypoints":
             return PersonKeypointsProcessor()
         else:
             raise ValueError(f"Invalid task: {self.task}")
@@ -923,7 +923,7 @@ def dataset_configs(year: int, version: ds.Version) -> List[MsCocoConfig]:
         ),
         MsCocoConfig(
             year=year,
-            coco_task="person_keypoints",
+            coco_task="person-keypoints",
             version=version,
         ),
         # MsCocoConfig(
@@ -933,7 +933,7 @@ def dataset_configs(year: int, version: ds.Version) -> List[MsCocoConfig]:
         # ),
         # MsCocoConfig(
         #     year=year,
-        #     coco_task=("captions", "person_keypoints"),
+        #     coco_task=("captions", "person-keypoints"),
         #     version=version,
         # ),
     ]
