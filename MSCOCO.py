@@ -373,7 +373,7 @@ class InstancesAnnotationData(AnnotationData):
             #
             # for InstancesAnnotationData
             #
-            segmentation=segmentation_mask,
+            segmentation=segmentation_mask,  # type: ignore
             area=json_dict["area"],
             iscrowd=iscrowd,
             bbox=json_dict["bbox"],
@@ -454,7 +454,7 @@ class PersonKeypointsAnnotationData(InstancesAnnotationData):
             #
             # for InstancesAnnotationData
             #
-            segmentation=segmentation_mask,
+            segmentation=segmentation_mask,  # type: ignore
             area=json_dict["area"],
             iscrowd=iscrowd,
             bbox=json_dict["bbox"],
@@ -596,9 +596,8 @@ class MsCocoProcessor(object, metaclass=abc.ABCMeta):
         raise NotImplementedError
 
     @abc.abstractmethod
-    def load_data(
-        self, ann_dicts: List[JsonDict], tqdm_desc: Optional[str] = None, **kwargs
-    ):
+    def load_data(self, ann_dicts: List[JsonDict], tqdm_desc: str = "", **kwargs):
+        assert tqdm_desc != "", "tqdm_desc must be provided."
         raise NotImplementedError
 
     @abc.abstractmethod
@@ -964,8 +963,8 @@ class MsCocoDataset(ds.GeneratorBasedBuilder):
         return config.task
 
     def _info(self) -> ds.DatasetInfo:
-        processor: MsCocoProcessor = self.config.processor
-        features = processor.get_features(decode_rle=self.config.decode_rle)
+        processor: MsCocoProcessor = self.config.processor  # type: ignore
+        features = processor.get_features(decode_rle=self.config.decode_rle)  # type: ignore
         return ds.DatasetInfo(
             description=_DESCRIPTION,
             citation=_CITATION,
@@ -1015,7 +1014,7 @@ class MsCocoDataset(ds.GeneratorBasedBuilder):
         ann_dir = os.path.join(base_annotation_dir, "annotations")
         ann_file_path = os.path.join(ann_dir, f"{self.task}_{split}{self.year}.json")
 
-        processor: MsCocoProcessor = self.config.processor
+        processor: MsCocoProcessor = self.config.processor  # type: ignore
 
         ann_json = processor.load_annotation_json(ann_file_path=ann_file_path)
 
@@ -1030,7 +1029,7 @@ class MsCocoDataset(ds.GeneratorBasedBuilder):
             else None
         )
 
-        config: MsCocoConfig = self.config
+        config: MsCocoConfig = self.config  # type: ignore
         yield from processor.generate_examples(
             annotations=processor.load_data(
                 ann_dicts=ann_json["annotations"],
