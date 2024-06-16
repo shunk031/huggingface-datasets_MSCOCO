@@ -3,21 +3,22 @@ name = "huggingface-datasets-mscoco"
 version = "0.1.0"
 description = ""
 authors = ["Shunsuke KITADA <shunsuke.kitada.0831@gmail.com>"]
-readme = "README.md"
+package-mode = false
 
 [tool.poetry.dependencies]
-python = ">=3.9,<3.13"
+python = "^3.9"
 datasets = { extras = ["vision"], version = "^2.14.4" }
 pycocotools = "^2.0.7"
 numpy = "^1.26.1"
 
 [tool.poetry.group.dev.dependencies]
-ruff = "^0.0.286"
-black = "^23.7.0"
-mypy = "^1.5.1"
-pytest = "^7.4.0"
-pytest-xdist = "^3.3.1"
-numpy = "^1.26.1"
+ruff = ">=0.1.5"
+mypy = ">=1.0.0"
+pytest = ">=6.0.0"
+
+[tool.mypy]
+python_version = "3.9"
+ignore_missing_imports = true
 
 [build-system]
 requires = ["poetry-core", "numpy"]
