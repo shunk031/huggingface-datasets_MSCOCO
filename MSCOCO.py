@@ -41,16 +41,47 @@ MscocoSplits = Literal["train", "val", "test"]
 KEYPOINT_STATE: Final[List[str]] = ["unknown", "invisible", "visible"]
 
 
-_CITATION = """
+_CITATION = """\
+@inproceedings{lin2014microsoft,
+  title={Microsoft coco: Common objects in context},
+  author={Lin, Tsung-Yi and Maire, Michael and Belongie, Serge and Hays, James and Perona, Pietro and Ramanan, Deva and Doll{\'a}r, Piotr and Zitnick, C Lawrence},
+  booktitle={Computer Vision--ECCV 2014: 13th European Conference, Zurich, Switzerland, September 6-12, 2014, Proceedings, Part V 13},
+  pages={740--755},
+  year={2014},
+  organization={Springer}
+}
 """
 
-_DESCRIPTION = """
+_DESCRIPTION = """\
+COCO is a large-scale object detection, segmentation, and captioning dataset. COCO has several features:
+- Object segmentation
+- Recognition in context
+- Superpixel stuff segmentation
+- 330K images (>200K labeled)
+- 1.5 million object instances
+- 80 object categories
+- 91 stuff categories
+- 5 captions per image
+- 250,000 people with keypoints
 """
 
-_HOMEPAGE = """
-"""
+_HOMEPAGE = "https://cocodataset.org/#home"
 
-_LICENSE = """
+_LICENSE = """\
+The annotations in this dataset along with this website belong to the COCO Consortium and are licensed under a [Creative Commons Attribution 4.0 License](https://creativecommons.org/licenses/by/4.0/legalcode).
+
+## Images
+
+The COCO Consortium does not own the copyright of the images. Use of the images must abide by the Flickr Terms of Use. The users of the images accept full responsibility for the use of the dataset, including but not limited to the use of any copies of copyrighted images that they may create from the dataset.
+
+## Software
+
+Copyright (c) 2015, COCO Consortium. All rights reserved. Redistribution and use software in source and binary form, with or without modification, are permitted provided that the following conditions are met:
+- Redistributions of source code must retain the above copyright notice, this list of conditions and the following disclaimer.
+- Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following disclaimer in the documentation and/or other materials provided with the distribution.
+- Neither the name of the COCO Consortium nor the names of its contributors may be used to endorse or promote products derived from this software without specific prior written permission.
+
+THIS SOFTWARE AND ANNOTATIONS ARE PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 """
 
 _URLS = {
@@ -467,6 +498,39 @@ class PersonKeypointsAnnotationData(InstancesAnnotationData):
         )
 
 
+@dataclass
+class StuffAnnotationData(InstancesAnnotationData):
+    @classmethod
+    def from_dict(  # type: ignore[override]
+        cls,
+        json_dict: JsonDict,
+        decode_rle: bool,
+    ) -> "StuffAnnotationData":
+        segmentation = json_dict["segmentation"]
+        image_id = json_dict["image_id"]
+        iscrowd = bool(json_dict["iscrowd"])
+
+        segmentation_mask = (
+            cocomask.decode(segmentation) if decode_rle else segmentation
+        )
+
+        return cls(
+            #
+            # for AnnotationData
+            #
+            annotation_id=json_dict["id"],
+            image_id=image_id,
+            #
+            # for InstancesAnnotationData
+            #
+            segmentation=segmentation_mask,
+            area=json_dict["area"],
+            iscrowd=iscrowd,
+            bbox=json_dict["bbox"],
+            category_id=json_dict["category_id"],
+        )
+
+
 class LicenseDict(TypedDict):
     license_id: LicenseId
     name: str
@@ -572,6 +636,37 @@ class MsCocoProcessor(object, metaclass=abc.ABCMeta):
             category_data = CategoryData.from_dict(category_dict)
             categories[category_data.category_id] = category_data
         return categories
+
+    def split_generators(self, file_paths: Dict[str, Any]) -> List[ds.SplitGenerator]:
+        imgs = file_paths["images"]
+        anns = file_paths["annotations"]
+
+        return [
+            ds.SplitGenerator(
+                name=ds.Split.TRAIN,  # type: ignore
+                gen_kwargs={
+                    "base_image_dir": imgs["train"],
+                    "base_annotation_dir": anns["train_validation"],
+                    "split": "train",
+                },
+            ),
+            ds.SplitGenerator(
+                name=ds.Split.VALIDATION,  # type: ignore
+                gen_kwargs={
+                    "base_image_dir": imgs["validation"],
+                    "base_annotation_dir": anns["train_validation"],
+                    "split": "val",
+                },
+            ),
+            # ds.SplitGenerator(
+            #     name=ds.Split.TEST,  # type: ignore
+            #     gen_kwargs={
+            #         "base_image_dir": imgs["test"],
+            #         "test_image_info_path": anns["test_image_info"],
+            #         "split": "test",
+            #     },
+            # ),
+        ]
 
     def get_features_base_dict(self):
         return {
@@ -827,6 +922,139 @@ class PersonKeypointsProcessor(InstancesProcessor):
             yield idx, example  # type: ignore
 
 
+class StuffProcessor(MsCocoProcessor):
+    def get_features(self, *args, **kwargs) -> ds.Features:
+        return ds.Features()
+
+    def split_generators(self, file_paths: Dict[str, Any]) -> List[ds.SplitGenerator]:
+        imgs = file_paths["images"]
+        anns = file_paths["annotations"]
+
+        return [
+            ds.SplitGenerator(
+                name=ds.Split.TRAIN,  # type: ignore
+                gen_kwargs={
+                    "base_image_dir": imgs["train"],
+                    "base_annotation_dir": anns["stuff_train_validation"],
+                    "split": "train",
+                },
+            ),
+            ds.SplitGenerator(
+                name=ds.Split.VALIDATION,  # type: ignore
+                gen_kwargs={
+                    "base_image_dir": imgs["validation"],
+                    "base_annotation_dir": anns["stuff_train_validation"],
+                    "split": "val",
+                },
+            ),
+            # ds.SplitGenerator(
+            #     name=ds.Split.TEST,  # type: ignore
+            #     gen_kwargs={
+            #         "base_image_dir": imgs["test"],
+            #         "test_image_info_path": anns["test_image_info"],
+            #         "split": "test",
+            #     },
+            # ),
+        ]
+
+    def load_data(  # type: ignore[override]
+        self,
+        ann_dicts: List[JsonDict],
+        decode_rle: bool,
+        tqdm_desc: str = "Load stuff data",
+        **kwargs,
+    ) -> Dict[ImageId, List[StuffAnnotationData]]:
+        annotations = defaultdict(list)
+        ann_dicts = sorted(ann_dicts, key=lambda d: d["image_id"])
+
+        ann_dicts = ann_dicts[:100000]
+
+        for ann_dict in tqdm(ann_dicts, desc=tqdm_desc):
+            ann_data = StuffAnnotationData.from_dict(ann_dict, decode_rle=decode_rle)
+            annotations[ann_data.image_id].append(ann_data)
+
+        return annotations
+
+    def generate_examples(
+        self,
+        image_dir: str,
+        images: Dict[ImageId, ImageData],
+        annotations: Dict[ImageId, List[CaptionsAnnotationData]],
+        licenses: Dict[LicenseId, LicenseData],
+        categories: Dict[CategoryId, CategoryData],
+        **kwargs,
+    ):
+        for idx, image_id in enumerate(images.keys()):
+            image_data = images[image_id]
+            image_anns = annotations[image_id]
+
+            image = self.load_image(
+                image_path=os.path.join(image_dir, image_data.file_name)
+            )
+            example = asdict(image_data)
+            example["image"] = image
+            example["license"] = asdict(licenses[image_data.license_id])
+
+            example["annotations"] = []
+            for ann in image_anns:
+                ann_dict = asdict(ann)
+                category = categories[ann.category_id]
+                ann_dict["category"] = asdict(category)
+                example["annotations"].append(ann_dict)
+
+            yield idx, example  # type: ignore
+
+
+class PanopticProcessor(MsCocoProcessor):
+    def get_features(self, *args, **kwargs) -> ds.Features:
+        return ds.Features()
+
+    def split_generators(self, file_paths: Dict[str, Any]) -> List[ds.SplitGenerator]:
+        imgs = file_paths["images"]
+        anns = file_paths["annotations"]
+
+        return [
+            ds.SplitGenerator(
+                name=ds.Split.TRAIN,  # type: ignore
+                gen_kwargs={
+                    "base_image_dir": imgs["train"],
+                    "base_annotation_dir": anns["panoptic_train_validation"],
+                    "split": "train",
+                },
+            ),
+            ds.SplitGenerator(
+                name=ds.Split.VALIDATION,  # type: ignore
+                gen_kwargs={
+                    "base_image_dir": imgs["validation"],
+                    "base_annotation_dir": anns["panoptic_train_validation"],
+                    "split": "val",
+                },
+            ),
+            # ds.SplitGenerator(
+            #     name=ds.Split.TEST,  # type: ignore
+            #     gen_kwargs={
+            #         "base_image_dir": imgs["test"],
+            #         "test_image_info_path": anns["test_image_info"],
+            #         "split": "test",
+            #     },
+            # ),
+        ]
+
+    def load_data(self, ann_dicts: List[JsonDict], tqdm_desc: str = "Load stuff data"):
+        annotations = defaultdict(list)
+        breakpoint()
+
+    def generate_examples(
+        self,
+        image_dir: str,
+        images: Dict[ImageId, ImageData],
+        annotations: Dict[ImageId, List[CaptionsAnnotationData]],
+        licenses: Dict[LicenseId, LicenseData],
+        **kwargs,
+    ):
+        breakpoint()
+
+
 class MsCocoConfig(ds.BuilderConfig):
     YEARS: Tuple[int, ...] = (
         2014,
@@ -836,6 +1064,8 @@ class MsCocoConfig(ds.BuilderConfig):
         "captions",
         "instances",
         "person_keypoints",
+        "stuff",
+        "panoptic",
     )
 
     def __init__(
@@ -895,6 +1125,10 @@ class MsCocoConfig(ds.BuilderConfig):
             return InstancesProcessor()
         elif self.task == "person_keypoints":
             return PersonKeypointsProcessor()
+        elif self.task == "stuff":
+            return StuffProcessor()
+        elif self.task == "panoptic":
+            return PanopticProcessor()
         else:
             raise ValueError(f"Invalid task: {self.task}")
 
@@ -944,7 +1178,10 @@ def configs_2014(version: ds.Version) -> List[MsCocoConfig]:
 
 
 def configs_2017(version: ds.Version) -> List[MsCocoConfig]:
-    return dataset_configs(year=2017, version=version)
+    return dataset_configs(year=2017, version=version) + [
+        MsCocoConfig(year=2017, coco_task="stuff", version=version),
+        MsCocoConfig(year=2017, coco_task="panoptic", version=version),
+    ]
 
 
 class MsCocoDataset(ds.GeneratorBasedBuilder):
@@ -975,36 +1212,8 @@ class MsCocoDataset(ds.GeneratorBasedBuilder):
 
     def _split_generators(self, dl_manager: ds.DownloadManager):
         file_paths = dl_manager.download_and_extract(_URLS[f"{self.year}"])
-
-        imgs = file_paths["images"]  # type: ignore
-        anns = file_paths["annotations"]  # type: ignore
-
-        return [
-            ds.SplitGenerator(
-                name=ds.Split.TRAIN,  # type: ignore
-                gen_kwargs={
-                    "base_image_dir": imgs["train"],
-                    "base_annotation_dir": anns["train_validation"],
-                    "split": "train",
-                },
-            ),
-            ds.SplitGenerator(
-                name=ds.Split.VALIDATION,  # type: ignore
-                gen_kwargs={
-                    "base_image_dir": imgs["validation"],
-                    "base_annotation_dir": anns["train_validation"],
-                    "split": "val",
-                },
-            ),
-            # ds.SplitGenerator(
-            #     name=ds.Split.TEST,  # type: ignore
-            #     gen_kwargs={
-            #         "base_image_dir": imgs["test"],
-            #         "test_image_info_path": anns["test_image_info"],
-            #         "split": "test",
-            #     },
-            # ),
-        ]
+        processor: MsCocoProcessor = self.config.processor
+        return processor.split_generators(file_paths)
 
     def _generate_train_val_examples(
         self, split: str, base_image_dir: str, base_annotation_dir: str
