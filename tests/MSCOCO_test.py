@@ -3,12 +3,12 @@ import os
 import datasets as ds
 import pytest
 
-from MSCOCO import CATEGORIES, SUPER_CATEGORIES
+from const import CATEGORIES, SUPER_CATEGORIES
 
 
 @pytest.fixture
 def dataset_path() -> str:
-    return "MSCOCO.py"
+    return "./MSCOCO.py"
 
 
 @pytest.mark.skipif(
@@ -54,7 +54,10 @@ def test_load_dataset(
         year=dataset_year,
         coco_task=coco_task,
         decode_rle=decode_rle,
+        trust_remote_code=True,
     )
+    assert isinstance(dataset, ds.DatasetDict)
+
     assert dataset["train"].num_rows == expected_num_train
     assert dataset["validation"].num_rows == expected_num_validation
 
