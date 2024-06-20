@@ -338,7 +338,6 @@ class InstancesAnnotationData(AnnotationData):
         height: int,
         width: int,
     ) -> CompressedRLE:
-        breakpoint()
         if iscrowd:
             rle = cocomask.frPyObjects(segmentation, h=height, w=width)
         else:
@@ -502,32 +501,19 @@ class PersonKeypointsAnnotationData(InstancesAnnotationData):
 @dataclass
 class StuffAnnotationData(InstancesAnnotationData):
     @classmethod
-    def from_dict(
+    def from_dict(  # type: ignore[override]
         cls,
         json_dict: JsonDict,
-        images: Dict[ImageId, ImageData],
         decode_rle: bool,
     ) -> "StuffAnnotationData":
         segmentation = json_dict["segmentation"]
         image_id = json_dict["image_id"]
-        image_data = images[image_id]
         iscrowd = bool(json_dict["iscrowd"])
 
         segmentation_mask = (
-            cls.rle_segmentation_to_mask(
-                segmentation=segmentation,
-                iscrowd=iscrowd,
-                height=image_data.height,
-                width=image_data.width,
-            )
-            if decode_rle
-            else cls.compress_rle(
-                segmentation=segmentation,
-                iscrowd=iscrowd,
-                height=image_data.height,
-                width=image_data.width,
-            )
+            cocomask.decode(segmentation) if decode_rle else segmentation
         )
+
         return cls(
             #
             # for AnnotationData
@@ -971,21 +957,22 @@ class StuffProcessor(MsCocoProcessor):
             # ),
         ]
 
-    def load_data(
+    def load_data(  # type: ignore[override]
         self,
         ann_dicts: List[JsonDict],
-        images: Dict[ImageId, ImageData],
         decode_rle: bool,
         tqdm_desc: str = "Load stuff data",
-    ):
+        **kwargs,
+    ) -> Dict[ImageId, List[StuffAnnotationData]]:
         annotations = defaultdict(list)
         ann_dicts = sorted(ann_dicts, key=lambda d: d["image_id"])
 
+        ann_dicts = ann_dicts[:100000]
+
         for ann_dict in tqdm(ann_dicts, desc=tqdm_desc):
-            ann_data = StuffAnnotationData.from_dict(
-                ann_dict, images=images, decode_rle=decode_rle
-            )
+            ann_data = StuffAnnotationData.from_dict(ann_dict, decode_rle=decode_rle)
             annotations[ann_data.image_id].append(ann_data)
+
         return annotations
 
     def generate_examples(
@@ -994,9 +981,28 @@ class StuffProcessor(MsCocoProcessor):
         images: Dict[ImageId, ImageData],
         annotations: Dict[ImageId, List[CaptionsAnnotationData]],
         licenses: Dict[LicenseId, LicenseData],
+        categories: Dict[CategoryId, CategoryData],
         **kwargs,
     ):
-        breakpoint()
+        for idx, image_id in enumerate(images.keys()):
+            image_data = images[image_id]
+            image_anns = annotations[image_id]
+
+            image = self.load_image(
+                image_path=os.path.join(image_dir, image_data.file_name)
+            )
+            example = asdict(image_data)
+            example["image"] = image
+            example["license"] = asdict(licenses[image_data.license_id])
+
+            example["annotations"] = []
+            for ann in image_anns:
+                ann_dict = asdict(ann)
+                category = categories[ann.category_id]
+                ann_dict["category"] = asdict(category)
+                example["annotations"].append(ann_dict)
+
+            yield idx, example  # type: ignore
 
 
 class PanopticProcessor(MsCocoProcessor):
